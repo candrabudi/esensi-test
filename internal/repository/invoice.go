@@ -20,6 +20,7 @@ type Invoice interface {
 	FindByID(ctx context.Context, invoiceID int) (dto.DetailInvoice, error)
 	Insert(ctx context.Context, input *dto.InsertInvoice) error
 	Update(ctx context.Context, invoiceID int, input *dto.InsertInvoice) error
+	CancelInvoice(ctx context.Context, invoiceID int) error
 }
 
 type invoice struct {
@@ -267,6 +268,40 @@ func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertIn
 			tx.Rollback()
 			return fmt.Errorf("failed to store invoice detail: %w", err)
 		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (i *invoice) CancelInvoice(ctx context.Context, invoiceID int) error {
+	tx := i.Db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic: %v", r)
+			tx.Rollback()
+		}
+	}()
+
+	existingInvoice := models.Invoice{}
+	if err := tx.WithContext(ctx).First(&existingInvoice, invoiceID).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to find existing invoice: %w", err)
+	}
+
+	if existingInvoice.Status == "Cancel" {
+		tx.Rollback()
+		return errors.New("invoice is already canceled")
+	}
+
+	existingInvoice.Status = "Cancel"
+
+	if err := tx.WithContext(ctx).Save(&existingInvoice).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to cancel invoice: %w", err)
 	}
 
 	if err := tx.Commit().Error; err != nil {

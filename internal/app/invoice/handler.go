@@ -131,3 +131,23 @@ func (h *handler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 	return
 }
+
+func (h *handler) CancelInvoice(c *gin.Context) {
+	ID, _ := strconv.Atoi(c.Param("id"))
+
+	if ID == 0 {
+		response := util.APIResponse("Please input ID invoice ", http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	err := h.service.CancelInvoice(c.Request.Context(), ID)
+	if err != nil {
+		response := util.APIResponse(err.Error(), http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+	response := util.APIResponse("Success cancel invoice", http.StatusOK, "success", nil)
+	c.JSON(http.StatusOK, response)
+	return
+}

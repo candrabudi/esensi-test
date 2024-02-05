@@ -17,6 +17,7 @@ type Service interface {
 	Detail(ctx context.Context, InvoiceID int) (dto.DetailInvoice, error)
 	Store(ctx context.Context, input dto.InsertInvoice) (err error)
 	Update(ctx context.Context, InvoiceID int, input dto.InsertInvoice) (err error)
+	CancelInvoice(ctx context.Context, InvoiceID int) (err error)
 }
 
 func NewService(f *factory.Factory) Service {
@@ -97,6 +98,16 @@ func (s *service) Store(ctx context.Context, input dto.InsertInvoice) (err error
 func (s *service) Update(ctx context.Context, InvoiceID int, input dto.InsertInvoice) (err error) {
 
 	err = s.InvoiceRepository.Update(ctx, InvoiceID, &input)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *service) CancelInvoice(ctx context.Context, InvoiceID int) (err error) {
+
+	err = s.InvoiceRepository.CancelInvoice(ctx, InvoiceID)
 	if err != nil {
 		return err
 	}
