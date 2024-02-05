@@ -6,6 +6,7 @@ import (
 	"esensi-test/pkg/util"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,4 +45,20 @@ func (h *handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 	return
 
+}
+
+func (h *handler) Logout(c *gin.Context) {
+	header := c.Request.Header["Authorization"]
+	rep := regexp.MustCompile(`(Bearer)\s?`)
+	bearerStr := rep.ReplaceAllString(header[0], "")
+	err := h.service.Logout(c, bearerStr)
+
+	if err != nil {
+		response := util.APIResponse(err.Error(), http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	response := util.APIResponse("Success logout user", http.StatusOK, "success", nil)
+	c.JSON(http.StatusOK, response)
 }

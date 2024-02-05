@@ -40,8 +40,9 @@ func Authenticate() gin.HandlerFunc {
 		f := factory.NewFactory()
 		userID, _ := strconv.Atoi(claims["user_id"].(string))
 
-		checkToken, err := f.UserSessionRepository.FindOneByFields(c, "id,user_id,token", "token IN ? and deleted_at is null", bearerStr)
+		checkToken, err := f.UserSessionRepository.FindOneByFields(c, "id, user_id, token", "token = ? AND deleted_at IS NULL", bearerStr)
 		if err != nil {
+			fmt.Println(err)
 			response := util.APIResponse("Unauthorized", http.StatusUnauthorized, "failed", nil)
 			c.JSON(http.StatusUnauthorized, response)
 			c.Abort()

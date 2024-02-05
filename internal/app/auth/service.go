@@ -23,6 +23,7 @@ type service struct {
 
 type Service interface {
 	Login(ctx context.Context, payload dto.PayloadLogin) (dto.ResponseLoginUser, error)
+	Logout(ctx context.Context, bearer string) (err error)
 }
 
 func NewService(f *factory.Factory) Service {
@@ -71,6 +72,16 @@ func (s *service) Login(ctx context.Context, payload dto.PayloadLogin) (dto.Resp
 		AccessToken: jwt,
 	}
 	return response, nil
+}
+
+func (s *service) Logout(ctx context.Context, bearer string) (err error) {
+
+	err = s.UserSessionRepository.Logout(ctx, bearer)
+	if err != nil {
+		return errors.New("Sorry can`t logout, check your bearer")
+	}
+
+	return nil
 }
 
 func ComparePasswords(hashedPassword, inputPassword string) error {
