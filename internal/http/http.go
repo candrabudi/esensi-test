@@ -1,6 +1,7 @@
 package http
 
 import (
+	"esensi-test/internal/app/auth"
 	"esensi-test/internal/app/user"
 	"esensi-test/internal/factory"
 
@@ -17,6 +18,7 @@ func NewHttp(g *gin.Engine, f *factory.Factory) {
 	// Here we define a router group
 	v1 := g.Group("/api/v1")
 	// Here we register the route from user handler
+	auth.NewHandler(f).Router(v1.Group("/auth"))
 	user.NewHandler(f).Router(v1.Group("/user"))
 
 }

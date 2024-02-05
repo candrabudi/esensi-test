@@ -6,8 +6,9 @@ import (
 )
 
 type Factory struct {
-	UserRepository  repository.User
-	RedisRepository repository.RedisRepository
+	UserRepository        repository.User
+	UserSessionRepository repository.UserSession
+	RedisRepository       repository.RedisRepository
 }
 
 func NewFactory() *Factory {
@@ -17,6 +18,7 @@ func NewFactory() *Factory {
 	return &Factory{
 		// Pass the db connection to repository package for database query calling
 		repository.NewUserRepository(db),
+		repository.NewUserSessionRepository(db),
 		repository.NewRedisRepository(rdb),
 	}
 }

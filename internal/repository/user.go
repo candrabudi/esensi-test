@@ -9,6 +9,7 @@ import (
 
 type User interface {
 	Insert(ctx context.Context, input *models.User) (err error)
+	FindUser(ctx context.Context, queries []string, argsSlice ...[]interface{}) (models.User, error)
 }
 
 type user struct {
@@ -28,4 +29,22 @@ func (u *user) Insert(ctx context.Context, input *models.User) (err error) {
 	}
 
 	return nil
+}
+
+func (u *user) FindUser(ctx context.Context, queries []string, argsSlice ...[]interface{}) (models.User, error) {
+	var res models.User
+
+	db := u.Db.WithContext(ctx).Model(models.User{})
+
+	for idx, query := range queries {
+		if idx < len(argsSlice) {
+			db = db.Or(query, argsSlice[idx]...)
+		}
+	}
+
+	if err := db.Find(&res).Error; err != nil {
+		return models.User{}, err
+	}
+
+	return res, nil
 }
