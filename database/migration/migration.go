@@ -8,6 +8,7 @@ import (
 var tables = []interface{}{
 	&models.User{},
 	&models.UserSession{},
+	&models.Item{},
 }
 
 func Migrate() {
