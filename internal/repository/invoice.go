@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"esensi-test/internal/dto"
 	"esensi-test/internal/models"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -24,16 +26,30 @@ type Invoice interface {
 }
 
 type invoice struct {
-	Db *gorm.DB
+	Db    *gorm.DB
+	Redis *redis.Client
 }
 
-func NewInvoiceRepository(db *gorm.DB) *invoice {
+func NewInvoiceRepository(db *gorm.DB, redisClient *redis.Client) *invoice {
 	return &invoice{
-		db,
+		Db:    db,
+		Redis: redisClient,
 	}
 }
 
 func (i *invoice) FindAll(ctx context.Context, limit int, offset int, selectedFields string, query string, args ...interface{}) (dto.ResultInvoice, error) {
+	cacheKey := fmt.Sprintf("FindAll:%s:%d:%d:%s", query, limit, offset, selectedFields)
+
+	cachedData, err := i.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var result dto.ResultInvoice
+		err := json.Unmarshal([]byte(cachedData), &result)
+		if err != nil {
+			return dto.ResultInvoice{}, fmt.Errorf("failed to unmarshal cached data: %w", err)
+		}
+		return result, nil
+	}
+
 	var res []models.Invoice
 	var totalData int64
 	var count int64
@@ -89,6 +105,17 @@ func (i *invoice) FindAll(ctx context.Context, limit int, offset int, selectedFi
 			Count:        len(invoices),
 		},
 	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		log.Printf("Failed to marshal result for caching: %v", err)
+	} else {
+		err = i.Redis.Set(ctx, cacheKey, resultJSON, time.Minute).Err()
+		if err != nil {
+			log.Printf("Failed to cache result in Redis: %v", err)
+		}
+	}
+
 	if len(invoices) == 0 {
 		result.Items = []dto.FindAllInvoice{}
 	}
@@ -96,6 +123,18 @@ func (i *invoice) FindAll(ctx context.Context, limit int, offset int, selectedFi
 }
 
 func (i *invoice) FindByID(ctx context.Context, invoiceID int) (dto.DetailInvoice, error) {
+	cacheKey := fmt.Sprintf("FindByID:%d", invoiceID)
+
+	cachedData, err := i.Redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var result dto.DetailInvoice
+		err := json.Unmarshal([]byte(cachedData), &result)
+		if err != nil {
+			return dto.DetailInvoice{}, fmt.Errorf("failed to unmarshal cached data: %w", err)
+		}
+		return result, nil
+	}
+
 	var invoice models.Invoice
 	var invoiceDetails []models.InvoiceDetail
 
@@ -132,6 +171,16 @@ func (i *invoice) FindByID(ctx context.Context, invoiceID int) (dto.DetailInvoic
 			Quantity:  detail.Qty,
 			UnitPrice: detail.ItemPrice.InexactFloat64(),
 			Amount:    detail.Amount.InexactFloat64(),
+		}
+	}
+
+	resultJSON, err := json.Marshal(detailInvoice)
+	if err != nil {
+		log.Printf("Failed to marshal result for caching: %v", err)
+	} else {
+		err = i.Redis.Set(ctx, cacheKey, resultJSON, time.Minute).Err()
+		if err != nil {
+			log.Printf("Failed to cache result in Redis: %v", err)
 		}
 	}
 
@@ -205,6 +254,8 @@ func (i *invoice) Insert(ctx context.Context, input *dto.InsertInvoice) error {
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	i.invalidateCache(ctx, "FindAll", "FindByID")
 
 	return nil
 }
@@ -281,6 +332,8 @@ func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertIn
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	i.invalidateCache(ctx, "FindAll", "FindByID")
+
 	return nil
 }
 
@@ -302,27 +355,6 @@ func (i *invoice) CancelInvoice(ctx context.Context, invoiceID int) error {
 	if existingInvoice.Status == "Cancel" {
 		tx.Rollback()
 		return errors.New("invoice is already canceled")
-	}
-
-	items := []models.Item{}
-	if err := tx.WithContext(ctx).Where("invoice_id = ?", invoiceID).Find(&items).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to retrieve invoice items: %w", err)
-	}
-
-	for _, item := range items {
-		itemToUpdate := models.Item{}
-		if err := tx.WithContext(ctx).First(&itemToUpdate, item.ID).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to find item: %w", err)
-		}
-
-		itemToUpdate.ItemStock += item.ItemStock
-
-		if err := tx.WithContext(ctx).Save(&itemToUpdate).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to update item stock: %w", err)
-		}
 	}
 
 	existingInvoice.Status = "Cancel"
@@ -368,4 +400,13 @@ func (i *invoice) getCustomerIDByName(ctx context.Context, customerName string) 
 	}
 
 	return customer.ID, nil
+}
+
+func (i *invoice) invalidateCache(ctx context.Context, keys ...string) {
+	for _, key := range keys {
+		cacheKey := fmt.Sprintf("%s:%s", "Invoice", key)
+		if err := i.Redis.Del(ctx, cacheKey).Err(); err != nil {
+			log.Printf("Failed to invalidate cache for key %s: %v", cacheKey, err)
+		}
+	}
 }

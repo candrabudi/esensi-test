@@ -24,7 +24,7 @@ func NewFactory() *Factory {
 		repository.NewUserSessionRepository(db),
 		repository.NewItemRepository(db),
 		repository.NewCustomerRepository(db),
-		repository.NewInvoiceRepository(db),
+		repository.NewInvoiceRepository(db, rdb),
 		repository.NewRedisRepository(rdb),
 	}
 }
