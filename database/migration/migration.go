@@ -10,6 +10,8 @@ var tables = []interface{}{
 	&models.UserSession{},
 	&models.Item{},
 	&models.Customer{},
+	&models.Invoice{},
+	&models.InvoiceDetail{},
 }
 
 func Migrate() {

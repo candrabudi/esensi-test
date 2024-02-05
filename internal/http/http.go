@@ -3,6 +3,7 @@ package http
 import (
 	"esensi-test/internal/app/auth"
 	"esensi-test/internal/app/customer"
+	"esensi-test/internal/app/invoice"
 	"esensi-test/internal/app/item"
 	"esensi-test/internal/app/user"
 	"esensi-test/internal/factory"
@@ -27,5 +28,6 @@ func NewHttp(g *gin.Engine, f *factory.Factory) {
 	user.NewHandler(f).Router(v1.Group("/user"))
 	item.NewHandler(f).Router(v1.Group("/item"))
 	customer.NewHandler(f).Router(v1.Group("/customer"))
+	invoice.NewHandler(f).Router(v1.Group("/invoice"))
 
 }
