@@ -9,6 +9,7 @@ type Factory struct {
 	UserRepository        repository.User
 	UserSessionRepository repository.UserSession
 	ItemRepository        repository.Item
+	CustomerRepository    repository.Customer
 	RedisRepository       repository.RedisRepository
 }
 
@@ -21,6 +22,7 @@ func NewFactory() *Factory {
 		repository.NewUserRepository(db),
 		repository.NewUserSessionRepository(db),
 		repository.NewItemRepository(db),
+		repository.NewCustomerRepository(db),
 		repository.NewRedisRepository(rdb),
 	}
 }

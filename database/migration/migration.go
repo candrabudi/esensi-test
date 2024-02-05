@@ -9,6 +9,7 @@ var tables = []interface{}{
 	&models.User{},
 	&models.UserSession{},
 	&models.Item{},
+	&models.Customer{},
 }
 
 func Migrate() {
