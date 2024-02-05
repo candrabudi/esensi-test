@@ -39,3 +39,9 @@ then to run the project you can use
 ```bash
 go run main.go
 ```
+
+The design table can be seen from the following link
+
+```bash
+https://www.figma.com/file/CMDgQekfoSobxxvwGBVHLq/design-database-esensi?type=whiteboard&node-id=0-1&t=CGrNaPCfcdpEuLip-0
+```
