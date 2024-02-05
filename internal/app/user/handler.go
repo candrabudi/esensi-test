@@ -30,14 +30,14 @@ func (h *handler) CreateUser(c *gin.Context) {
 			errorMessage = gin.H{"errors": errors}
 		}
 
-		response := util.APIResponse("User created failed", http.StatusUnprocessableEntity, "error", errorMessage)
+		response := util.APIResponse("User created failed", http.StatusUnprocessableEntity, "failed", errorMessage)
 		c.JSON(http.StatusUnprocessableEntity, response)
 		return
 	}
 
 	err = h.service.CreateUser(c.Request.Context(), input)
 	if err != nil {
-		response := util.APIResponse("User created failed", http.StatusInternalServerError, "error", err)
+		response := util.APIResponse("User created failed", http.StatusInternalServerError, "failed", err)
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}

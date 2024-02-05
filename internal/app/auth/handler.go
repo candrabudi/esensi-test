@@ -31,7 +31,7 @@ func (h *handler) Login(c *gin.Context) {
 			errorMessage = gin.H{"errors": errors}
 		}
 
-		response := util.APIResponse("Error login user", http.StatusUnprocessableEntity, "error", errorMessage)
+		response := util.APIResponse("Error login user", http.StatusUnprocessableEntity, "failed", errorMessage)
 		c.JSON(http.StatusUnprocessableEntity, response)
 		return
 	}
