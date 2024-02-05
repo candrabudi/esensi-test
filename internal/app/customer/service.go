@@ -4,6 +4,7 @@ import (
 	"context"
 	"esensi-test/internal/dto"
 	"esensi-test/internal/factory"
+	"esensi-test/internal/models"
 	"esensi-test/internal/repository"
 )
 
@@ -13,6 +14,7 @@ type service struct {
 
 type Service interface {
 	FindAll(ctx context.Context, search string) ([]dto.FindAllCustomer, error)
+	Store(ctx context.Context, input dto.InsertCustomer) (err error)
 }
 
 func NewService(f *factory.Factory) Service {
@@ -44,4 +46,19 @@ func (s *service) FindAll(ctx context.Context, search string) ([]dto.FindAllCust
 	}
 
 	return results, nil
+}
+
+func (s *service) Store(ctx context.Context, input dto.InsertCustomer) (err error) {
+	inputCustomer := models.Customer{
+		CustomerName:    input.CustomerName,
+		CustomerAddress: input.CustomerAddress,
+		CustomerPhone:   input.CustomerPhone,
+	}
+
+	err = s.CustomerRepository.Insert(ctx, &inputCustomer)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
