@@ -7,14 +7,17 @@ import (
 	"esensi-test/internal/models"
 	"esensi-test/pkg/util"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 type Invoice interface {
 	FindAll(ctx context.Context, limit int, offset int, selectedFields string, query string, args ...interface{}) (dto.ResultInvoice, error)
+	FindByID(ctx context.Context, invoiceID int) (dto.DetailInvoice, error)
 	Insert(ctx context.Context, input *dto.InsertInvoice) error
 	Update(ctx context.Context, invoiceID int, input *dto.InsertInvoice) error
 }
@@ -67,11 +70,11 @@ func (i *invoice) FindAll(ctx context.Context, limit int, offset int, selectedFi
 			CustomerName: invoice.CustomerName,
 			Subject:      invoice.Subject,
 			IssueDate:    formattedIssueDate,
-			GrandTotal:   invoice.GrandTotal,
-			SubTotal:     invoice.SubTotal,
+			GrandTotal:   invoice.GrandTotal.InexactFloat64(),
+			SubTotal:     invoice.SubTotal.InexactFloat64(),
 			TotalItem:    invoice.TotalItem,
 			DueDate:      formattedDueDate,
-			Status:       invoice.Status,
+			Status:       string(invoice.Status),
 		}
 		invoices = append(invoices, dinvoice)
 	}
@@ -91,20 +94,63 @@ func (i *invoice) FindAll(ctx context.Context, limit int, offset int, selectedFi
 	return result, nil
 }
 
+func (i *invoice) FindByID(ctx context.Context, invoiceID int) (dto.DetailInvoice, error) {
+	var invoice models.Invoice
+	var invoiceDetails []models.InvoiceDetail
+
+	if err := i.Db.WithContext(ctx).First(&invoice, invoiceID).Error; err != nil {
+		return dto.DetailInvoice{}, err
+	}
+
+	if err := i.Db.WithContext(ctx).Where("invoice_id = ?", invoiceID).Find(&invoiceDetails).Error; err != nil {
+		return dto.DetailInvoice{}, err
+	}
+
+	formattedIssueDate := invoice.IssueDate.Format("2006-01-02")
+	formattedDueDate := invoice.DueDate.Format("2006-01-02")
+
+	detailInvoice := dto.DetailInvoice{
+		ID:              invoice.ID,
+		InvoiceNo:       invoice.InvoiceNo,
+		CustomerName:    invoice.CustomerName,
+		CustomerAddress: invoice.CustomerAddress,
+		Subject:         invoice.Subject,
+		IssueDate:       formattedIssueDate,
+		GrandTotal:      invoice.GrandTotal.InexactFloat64(),
+		SubTotal:        invoice.SubTotal.InexactFloat64(),
+		TotalItem:       invoice.TotalItem,
+		DueDate:         formattedDueDate,
+		Status:          string(invoice.Status),
+		Items:           make([]dto.InvoiceDetail, len(invoiceDetails)),
+	}
+
+	for idx, detail := range invoiceDetails {
+		detailInvoice.Items[idx] = dto.InvoiceDetail{
+			ItemID:    detail.ItemID,
+			ItemName:  detail.ItemName,
+			Quantity:  detail.Qty,
+			UnitPrice: detail.ItemPrice.InexactFloat64(),
+			Amount:    detail.Amount.InexactFloat64(),
+		}
+	}
+
+	return detailInvoice, nil
+}
+
 func (i *invoice) Insert(ctx context.Context, input *dto.InsertInvoice) error {
 	nextInvoiceNo, err := i.getNextInvoiceNo(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get next invoice number: %w", err)
 	}
 
 	customerID, err := i.getCustomerIDByName(ctx, input.CustomerName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get customer ID: %w", err)
 	}
 
 	issueDate, err := time.Parse("2006-01-02", input.IssueDate)
 	if err != nil {
-		return errors.New("Failed to parse IssueDate")
+		return fmt.Errorf("failed to parse IssueDate: %w", err)
 	}
 
 	dueDate := time.Now().Add(3 * 24 * time.Hour)
@@ -112,62 +158,71 @@ func (i *invoice) Insert(ctx context.Context, input *dto.InsertInvoice) error {
 	tx := i.Db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
+			log.Printf("Panic: %v", r)
 			tx.Rollback()
 		}
 	}()
-
+	grandtotal := decimal.NewFromFloat(input.GrandTotal)
+	subtotal := decimal.NewFromFloat(input.SubTotal)
 	insertInvoice := models.Invoice{
-		InvoiceNo:    nextInvoiceNo,
-		CustomerID:   customerID,
-		CustomerName: input.CustomerName,
-		IssueDate:    issueDate,
-		Subject:      input.Subject,
-		TotalItem:    len(input.Items),
-		GrandTotal:   input.GrandTotal,
-		SubTotal:     input.SubTotal,
-		DueDate:      dueDate,
-		Status:       "Unpaid",
+		InvoiceNo:       nextInvoiceNo,
+		CustomerID:      customerID,
+		CustomerName:    input.CustomerName,
+		CustomerAddress: input.CustomerAddress,
+		IssueDate:       issueDate,
+		Subject:         input.Subject,
+		TotalItem:       len(input.Items),
+		GrandTotal:      grandtotal,
+		SubTotal:        subtotal,
+		DueDate:         dueDate,
+		Status:          "Unpaid",
 	}
 
 	if err := tx.WithContext(ctx).Create(&insertInvoice).Error; err != nil {
 		tx.Rollback()
-		return errors.New("Failed to store invoice")
+		return fmt.Errorf("failed to store invoice: %w", err)
 	}
 
 	for _, item := range input.Items {
+		unitPrice := decimal.NewFromFloat(item.UnitPrice)
+		amount := decimal.NewFromFloat(item.Amount)
 		insertInvoiceDetail := models.InvoiceDetail{
-			InvoiceID: insertInvoice.ID,
+			InvoiceID: uint(insertInvoice.ID),
 			ItemID:    item.ItemID,
 			ItemName:  item.ItemName,
-			ItemPrice: item.UnitPrice,
+			ItemPrice: unitPrice,
 			Qty:       item.Quantity,
-			Amount:    item.Amount,
+			Amount:    amount,
 		}
 
 		if err := tx.WithContext(ctx).Create(&insertInvoiceDetail).Error; err != nil {
 			tx.Rollback()
-			return errors.New("Failed to store invoice detail")
+			return fmt.Errorf("failed to store invoice detail: %w", err)
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 
 func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertInvoice) error {
 	customerID, err := i.getCustomerIDByName(ctx, input.CustomerName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get customer ID: %w", err)
 	}
 
 	issueDate, err := time.Parse("2006-01-02", input.IssueDate)
 	if err != nil {
-		return errors.New("Failed to parse IssueDate")
+		return fmt.Errorf("failed to parse IssueDate: %w", err)
 	}
 
 	tx := i.Db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
+			log.Printf("Panic: %v", r)
 			tx.Rollback()
 		}
 	}()
@@ -175,41 +230,49 @@ func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertIn
 	existingInvoice := models.Invoice{}
 	if err := tx.WithContext(ctx).First(&existingInvoice, invoiceID).Error; err != nil {
 		tx.Rollback()
-		return errors.New("Failed to find existing invoice")
+		return fmt.Errorf("failed to find existing invoice: %w", err)
 	}
+	grandtotal := decimal.NewFromFloat(input.GrandTotal)
+	subtotal := decimal.NewFromFloat(input.SubTotal)
 
 	existingInvoice.CustomerID = customerID
 	existingInvoice.CustomerName = input.CustomerName
+	existingInvoice.CustomerAddress = input.CustomerAddress
 	existingInvoice.IssueDate = issueDate
 	existingInvoice.Subject = input.Subject
 	existingInvoice.TotalItem = len(input.Items)
-	existingInvoice.GrandTotal = input.GrandTotal
-	existingInvoice.SubTotal = input.SubTotal
+	existingInvoice.GrandTotal = grandtotal
+	existingInvoice.SubTotal = subtotal
 	existingInvoice.DueDate = time.Now().Add(3 * 24 * time.Hour)
 	existingInvoice.Status = "Unpaid"
 
 	if err := tx.WithContext(ctx).Save(&existingInvoice).Error; err != nil {
 		tx.Rollback()
-		return errors.New("Failed to update invoice")
+		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
 	for _, item := range input.Items {
+		unitPrice := decimal.NewFromFloat(item.UnitPrice)
+		amount := decimal.NewFromFloat(item.Amount)
 		insertInvoiceDetail := models.InvoiceDetail{
-			InvoiceID: invoiceID,
+			InvoiceID: uint(invoiceID),
 			ItemID:    item.ItemID,
 			ItemName:  item.ItemName,
-			ItemPrice: item.UnitPrice,
+			ItemPrice: unitPrice,
 			Qty:       item.Quantity,
-			Amount:    item.Amount,
+			Amount:    amount,
 		}
 
-		if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: invoiceID, ItemID: item.ItemID}).Assign(insertInvoiceDetail).FirstOrCreate(&models.InvoiceDetail{}).Error; err != nil {
+		if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: uint(invoiceID), ItemID: item.ItemID}).Assign(insertInvoiceDetail).FirstOrCreate(&models.InvoiceDetail{}).Error; err != nil {
 			tx.Rollback()
-			return errors.New("Failed to store invoice detail")
+			return fmt.Errorf("failed to store invoice detail: %w", err)
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
 }
 

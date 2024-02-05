@@ -52,6 +52,26 @@ func (h *handler) FindAll(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *handler) Detail(c *gin.Context) {
+	ID, _ := strconv.Atoi(c.Param("id"))
+
+	if ID == 0 {
+		response := util.APIResponse("Please input ID invoice ", http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	result, err := h.service.Detail(c.Request.Context(), ID)
+	if err != nil {
+		response := util.APIResponse(err.Error(), http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+	response := util.APIResponse("Success get detail invoice", http.StatusOK, "success", result)
+	c.JSON(http.StatusOK, response)
+	return
+}
+
 func (h *handler) Store(c *gin.Context) {
 	var input dto.InsertInvoice
 	err := c.ShouldBindJSON(&input)
