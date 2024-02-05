@@ -6,6 +6,7 @@ import (
 	"esensi-test/pkg/util"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +19,37 @@ func NewHandler(f *factory.Factory) *handler {
 	return &handler{
 		service: NewService(f),
 	}
+}
+
+func (h *handler) FindAll(c *gin.Context) {
+	limitStr := c.Query("limit")
+	offsetStr := c.Query("offset")
+
+	limit := 10
+	offset := 0
+
+	if limitVal, err := strconv.Atoi(limitStr); err == nil {
+		limit = limitVal
+	}
+
+	if offsetVal, err := strconv.Atoi(offsetStr); err == nil {
+		offset = offsetVal
+	}
+
+	filters := map[string]interface{}{
+		"invoice_no":    c.Query("invoice_no"),
+		"issue_date":    c.Query("issue_date"),
+		"subject":       c.Query("subject"),
+		"total_item":    c.Query("total_item"),
+		"customer_name": c.Query("customer_name"),
+		"due_date":      c.Query("due_date"),
+		"status":        c.Query("status"),
+	}
+
+	invoices, _ := h.service.FindAll(c, limit, offset, filters)
+
+	response := util.APIResponse("Success get list invoices", http.StatusOK, "success", invoices)
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *handler) Store(c *gin.Context) {
