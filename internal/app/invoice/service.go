@@ -15,6 +15,7 @@ type service struct {
 type Service interface {
 	FindAll(ctx context.Context, limit, offset int, filterFields map[string]interface{}) (dto.ResultInvoice, error)
 	Store(ctx context.Context, input dto.InsertInvoice) (err error)
+	Update(ctx context.Context, InvoiceID int, input dto.InsertInvoice) (err error)
 }
 
 func NewService(f *factory.Factory) Service {
@@ -75,6 +76,16 @@ func (s *service) FindAll(ctx context.Context, limit, offset int, filterFields m
 func (s *service) Store(ctx context.Context, input dto.InsertInvoice) (err error) {
 
 	err = s.InvoiceRepository.Insert(ctx, &input)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *service) Update(ctx context.Context, InvoiceID int, input dto.InsertInvoice) (err error) {
+
+	err = s.InvoiceRepository.Update(ctx, InvoiceID, &input)
 	if err != nil {
 		return err
 	}

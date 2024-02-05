@@ -77,3 +77,37 @@ func (h *handler) Store(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 	return
 }
+
+func (h *handler) Update(c *gin.Context) {
+	ID, _ := strconv.Atoi(c.Param("id"))
+
+	if ID == 0 {
+		response := util.APIResponse("Please input ID invoice ", http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	var input dto.InsertInvoice
+	err := c.ShouldBindJSON(&input)
+	if err != nil {
+		errorMessage := gin.H{"errors": "please fill data"}
+		if err != io.EOF {
+			errors := util.FormatValidationError(err)
+			errorMessage = gin.H{"errors": errors}
+		}
+
+		response := util.APIResponse("Invoice updated failed", http.StatusUnprocessableEntity, "failed", errorMessage)
+		c.JSON(http.StatusUnprocessableEntity, response)
+		return
+	}
+
+	err = h.service.Update(c.Request.Context(), ID, input)
+	if err != nil {
+		response := util.APIResponse(err.Error(), http.StatusBadRequest, "failed", nil)
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+	response := util.APIResponse("Invoice updated success", http.StatusOK, "success", nil)
+	c.JSON(http.StatusOK, response)
+	return
+}

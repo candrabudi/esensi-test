@@ -16,6 +16,7 @@ import (
 type Invoice interface {
 	FindAll(ctx context.Context, limit int, offset int, selectedFields string, query string, args ...interface{}) (dto.ResultInvoice, error)
 	Insert(ctx context.Context, input *dto.InsertInvoice) error
+	Update(ctx context.Context, invoiceID int, input *dto.InsertInvoice) error
 }
 
 type invoice struct {
@@ -144,6 +145,65 @@ func (i *invoice) Insert(ctx context.Context, input *dto.InsertInvoice) error {
 		}
 
 		if err := tx.WithContext(ctx).Create(&insertInvoiceDetail).Error; err != nil {
+			tx.Rollback()
+			return errors.New("Failed to store invoice detail")
+		}
+	}
+
+	tx.Commit()
+	return nil
+}
+
+func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertInvoice) error {
+	customerID, err := i.getCustomerIDByName(ctx, input.CustomerName)
+	if err != nil {
+		return err
+	}
+
+	issueDate, err := time.Parse("2006-01-02", input.IssueDate)
+	if err != nil {
+		return errors.New("Failed to parse IssueDate")
+	}
+
+	tx := i.Db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	existingInvoice := models.Invoice{}
+	if err := tx.WithContext(ctx).First(&existingInvoice, invoiceID).Error; err != nil {
+		tx.Rollback()
+		return errors.New("Failed to find existing invoice")
+	}
+
+	existingInvoice.CustomerID = customerID
+	existingInvoice.CustomerName = input.CustomerName
+	existingInvoice.IssueDate = issueDate
+	existingInvoice.Subject = input.Subject
+	existingInvoice.TotalItem = len(input.Items)
+	existingInvoice.GrandTotal = input.GrandTotal
+	existingInvoice.SubTotal = input.SubTotal
+	existingInvoice.DueDate = time.Now().Add(3 * 24 * time.Hour)
+	existingInvoice.Status = "Unpaid"
+
+	if err := tx.WithContext(ctx).Save(&existingInvoice).Error; err != nil {
+		tx.Rollback()
+		return errors.New("Failed to update invoice")
+	}
+
+	for _, item := range input.Items {
+		insertInvoiceDetail := models.InvoiceDetail{
+			InvoiceID: invoiceID,
+			ItemID:    item.ItemID,
+			ItemName:  item.ItemName,
+			ItemPrice: item.UnitPrice,
+			Qty:       item.Quantity,
+			Amount:    item.Amount,
+		}
+
+		if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: invoiceID, ItemID: item.ItemID}).Assign(insertInvoiceDetail).FirstOrCreate(&models.InvoiceDetail{}).Error; err != nil {
 			tx.Rollback()
 			return errors.New("Failed to store invoice detail")
 		}
