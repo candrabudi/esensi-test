@@ -33,6 +33,7 @@ type (
 		DueDate   string  `json:"due_date"`
 		UnitPrice float64 `json:"unit_price"`
 		Amount    float64 `json:"amount"`
+		IsDelete  int     `json:"is_delete"`
 	}
 
 	InsertInvoice struct {

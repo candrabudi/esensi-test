@@ -253,20 +253,27 @@ func (i *invoice) Update(ctx context.Context, invoiceID int, input *dto.InsertIn
 	}
 
 	for _, item := range input.Items {
-		unitPrice := decimal.NewFromFloat(item.UnitPrice)
-		amount := decimal.NewFromFloat(item.Amount)
-		insertInvoiceDetail := models.InvoiceDetail{
-			InvoiceID: uint(invoiceID),
-			ItemID:    item.ItemID,
-			ItemName:  item.ItemName,
-			ItemPrice: unitPrice,
-			Qty:       item.Quantity,
-			Amount:    amount,
-		}
+		if item.IsDelete == 1 {
+			if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: uint(invoiceID), ItemID: item.ItemID}).Delete(&models.InvoiceDetail{}).Error; err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to delete invoice detail: %w", err)
+			}
+		} else {
+			unitPrice := decimal.NewFromFloat(item.UnitPrice)
+			amount := decimal.NewFromFloat(item.Amount)
+			insertInvoiceDetail := models.InvoiceDetail{
+				InvoiceID: uint(invoiceID),
+				ItemID:    item.ItemID,
+				ItemName:  item.ItemName,
+				ItemPrice: unitPrice,
+				Qty:       item.Quantity,
+				Amount:    amount,
+			}
 
-		if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: uint(invoiceID), ItemID: item.ItemID}).Assign(insertInvoiceDetail).FirstOrCreate(&models.InvoiceDetail{}).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to store invoice detail: %w", err)
+			if err := tx.WithContext(ctx).Where(models.InvoiceDetail{InvoiceID: uint(invoiceID), ItemID: item.ItemID}).Assign(insertInvoiceDetail).FirstOrCreate(&models.InvoiceDetail{}).Error; err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to store invoice detail: %w", err)
+			}
 		}
 	}
 
@@ -297,8 +304,28 @@ func (i *invoice) CancelInvoice(ctx context.Context, invoiceID int) error {
 		return errors.New("invoice is already canceled")
 	}
 
-	existingInvoice.Status = "Cancel"
+	items := []models.Item{}
+	if err := tx.WithContext(ctx).Where("invoice_id = ?", invoiceID).Find(&items).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to retrieve invoice items: %w", err)
+	}
 
+	for _, item := range items {
+		itemToUpdate := models.Item{}
+		if err := tx.WithContext(ctx).First(&itemToUpdate, item.ID).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to find item: %w", err)
+		}
+
+		itemToUpdate.ItemStock += item.ItemStock
+
+		if err := tx.WithContext(ctx).Save(&itemToUpdate).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to update item stock: %w", err)
+		}
+	}
+
+	existingInvoice.Status = "Cancel"
 	if err := tx.WithContext(ctx).Save(&existingInvoice).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to cancel invoice: %w", err)
