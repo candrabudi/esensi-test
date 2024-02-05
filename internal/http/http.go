@@ -4,6 +4,7 @@ import (
 	"esensi-test/internal/app/auth"
 	"esensi-test/internal/app/user"
 	"esensi-test/internal/factory"
+	"esensi-test/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,6 +15,8 @@ func NewHttp(g *gin.Engine, f *factory.Factory) {
 	g.Use(gin.Logger())
 	// Here we use the recovery middleware to catch a panic, if panic occurs recover the application witohut shutting it off
 	g.Use(gin.Recovery())
+
+	g.Use(middleware.CORSMiddleware())
 
 	// Here we define a router group
 	v1 := g.Group("/api/v1")
